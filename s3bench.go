@@ -21,6 +21,9 @@ import (
 const (
 	opRead  = "Read"
 	opWrite = "Write"
+  opRWread = "ReadWriteR75"
+  opRWsplit= "ReadWriteR50 "
+  opRWwrite= "ReadWriteW75"
 	//max that can be deleted at a time via DeleteObjects()
 	commitSize = 1000
 )
@@ -39,7 +42,8 @@ func main() {
 	numSamples := flag.Int("numSamples", 200, "total number of requests to send")
 	skipCleanup := flag.Bool("skipCleanup", false, "skip deleting objects created by this tool at the end of the run")
 	verbose := flag.Bool("verbose", false, "print verbose per thread status")
-
+  rw := flag.Bool("rw", false, "simultaneous read write test")
+  rw_ratio := flag.Int("rw_ratio",2, "ratio of reads to writes [1=25% reads 75% writes, 2=50-50 split, 3=75% reads] ")
 	flag.Parse()
 
 	if *numClients > *numSamples || *numSamples < 1 {
@@ -53,6 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
+
 	// Setup and print summary of the accepted parameters
 	params := Params{
 		requests:         make(chan Req),
@@ -64,7 +69,9 @@ func main() {
 		bucketName:       *bucketName,
 		endpoints:        strings.Split(*endpoint, ","),
 		verbose:          *verbose,
-	}
+    rw:               *rw,
+	  rw_ratio:         *rw_ratio,
+  }
 	fmt.Println(params)
 	fmt.Println()
 
@@ -96,12 +103,35 @@ func main() {
 	readResult := params.Run(opRead)
 	fmt.Println()
 
+  var rwResult Result
+  if params.rw == true {
+    if params.rw_ratio == 1 {
+	    fmt.Printf("Running %s test...\n", opRWwrite)
+	    rwResult = params.Run(opRWread)
+	    fmt.Println()
+    } else if params.rw_ratio == 2 {
+	    fmt.Printf("Running %s test...\n", opRWsplit)
+	    rwResult = params.Run(opRWsplit)
+	    fmt.Println()
+
+    } else if params.rw_ratio == 3 {
+	    fmt.Printf("Running %s test...\n", opRWread)
+	    rwResult = params.Run(opRWread)
+	    fmt.Println()
+    }
+
+  }
+
 	// Repeating the parameters of the test followed by the results
 	fmt.Println(params)
 	fmt.Println()
 	fmt.Println(writeResult)
 	fmt.Println()
 	fmt.Println(readResult)
+  if params.rw == true {
+    fmt.Println()
+	  fmt.Println(rwResult)
+  }
 
 	// Do cleanup if required
 	if !*skipCleanup {
@@ -187,6 +217,45 @@ func (params *Params) submitLoad(op string) {
 				Bucket: bucket,
 				Key:    key,
 			}
+		} else if op == opRWsplit {
+      if i%2 == 0 {
+        params.requests <- &s3.GetObjectInput{
+          Bucket: bucket,
+          Key:    key,
+        }
+      } else {
+        params.requests <- &s3.PutObjectInput{
+          Bucket: bucket,
+          Key:    key,
+          Body:   bytes.NewReader(bufferBytes),
+        }
+      }
+		} else if op == opRWread {
+      if i%4 == 0 {
+			  params.requests <- &s3.PutObjectInput{
+				  Bucket: bucket,
+				  Key:    key,
+				  Body:   bytes.NewReader(bufferBytes),
+        }
+			} else {
+        params.requests <- &s3.GetObjectInput{
+				  Bucket: bucket,
+				  Key:    key,
+        }
+      }
+    } else if op == opRWwrite {
+      if i%4 ==0 {
+			  params.requests <- &s3.GetObjectInput{
+				  Bucket: bucket,
+				  Key:    key,
+        }
+			} else {
+        params.requests <- &s3.PutObjectInput{
+				  Bucket: bucket,
+				  Key:    key,
+				  Body:   bytes.NewReader(bufferBytes),
+        }
+      }
 		} else {
 			panic("Developer error")
 		}
@@ -245,6 +314,8 @@ type Params struct {
 	bucketName       string
 	endpoints        []string
 	verbose          bool
+  rw               bool
+  rw_ratio         int
 }
 
 func (params Params) String() string {
@@ -256,6 +327,8 @@ func (params Params) String() string {
 	output += fmt.Sprintf("numClients:       %d\n", params.numClients)
 	output += fmt.Sprintf("numSamples:       %d\n", params.numSamples)
 	output += fmt.Sprintf("verbose:       %d\n", params.verbose)
+	output += fmt.Sprintf("rw:       %d\n", params.rw)
+	output += fmt.Sprintf("rw_ratio:       %d\n", params.rw_ratio)
 	return output
 }
 
