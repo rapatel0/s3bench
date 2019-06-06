@@ -99,26 +99,27 @@ func main() {
 	writeResult := params.Run(opWrite)
 	fmt.Println()
 
-	fmt.Printf("Running %s test...\n", opRead)
-	readResult := params.Run(opRead)
-	fmt.Println()
-
-  var rwResult Result
+	var readResult Result
   if params.rw == true {
     if params.rw_ratio == 1 {
 	    fmt.Printf("Running %s test...\n", opRWwrite)
-	    rwResult = params.Run(opRWread)
+	    readResult = params.Run(opRWread)
 	    fmt.Println()
     } else if params.rw_ratio == 2 {
 	    fmt.Printf("Running %s test...\n", opRWsplit)
-	    rwResult = params.Run(opRWsplit)
+	    readResult = params.Run(opRWsplit)
 	    fmt.Println()
 
     } else if params.rw_ratio == 3 {
 	    fmt.Printf("Running %s test...\n", opRWread)
-	    rwResult = params.Run(opRWread)
+	    readResult = params.Run(opRWread)
 	    fmt.Println()
     }
+
+  } else {
+    fmt.Printf("Running %s test...\n", opRead)
+	  readResult = params.Run(opRead)
+	  fmt.Println()
 
   }
 
@@ -128,10 +129,6 @@ func main() {
 	fmt.Println(writeResult)
 	fmt.Println()
 	fmt.Println(readResult)
-  if params.rw == true {
-    fmt.Println()
-	  fmt.Println(rwResult)
-  }
 
 	// Do cleanup if required
 	if !*skipCleanup {
