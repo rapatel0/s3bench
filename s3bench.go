@@ -21,9 +21,12 @@ import (
 const (
 	opRead  = "Read"
 	opWrite = "Write"
+	opWriteTwo = "WriteSplit"
+	opReadTwo= "ReadSplit"
   opRWread = "ReadWriteR75"
   opRWsplit= "ReadWriteR50 "
   opRWwrite= "ReadWriteW75"
+
 	//max that can be deleted at a time via DeleteObjects()
 	commitSize = 1000
 )
@@ -44,6 +47,8 @@ func main() {
 	verbose := flag.Bool("verbose", false, "print verbose per thread status")
   rw := flag.Bool("rw", false, "simultaneous read write test")
   rw_ratio := flag.Int("rw_ratio",2, "ratio of reads to writes [1=25% reads 75% writes, 2=50-50 split, 3=75% reads] ")
+  twoBuc := flag.Bool("twoBuc", false, "read and write to two different buckets")
+  bucketName2 := flag.String("bucketName2", "loadgen-2", "bucket name for split test")
 	flag.Parse()
 
 	if *numClients > *numSamples || *numSamples < 1 {
@@ -59,7 +64,7 @@ func main() {
 
 
 	// Setup and print summary of the accepted parameters
-	params := Params{
+	params := Params {
 		requests:         make(chan Req),
 		responses:        make(chan Resp),
 		numSamples:       *numSamples,
@@ -71,6 +76,8 @@ func main() {
 		verbose:          *verbose,
     rw:               *rw,
 	  rw_ratio:         *rw_ratio,
+    twoBuc:           *twoBuc,
+		bucketName2:       *bucketName2,
   }
 	fmt.Println(params)
 	fmt.Println()
@@ -95,9 +102,18 @@ func main() {
 	}
 	params.StartClients(cfg)
 
-	fmt.Printf("Running %s test...\n", opWrite)
-	writeResult := params.Run(opWrite)
-	fmt.Println()
+
+  var writeResult Result
+  if params.twoBuc == true {
+  	fmt.Printf("Running %s test...\n", opWriteTwo)
+	  writeResult = params.Run(opWriteTwo)
+	  fmt.Println()
+
+  } else {
+	  fmt.Printf("Running %s test...\n", opWrite)
+	  writeResult = params.Run(opWrite)
+	  fmt.Println()
+  }
 
 	var readResult Result
   if params.rw == true {
@@ -115,6 +131,11 @@ func main() {
 	    readResult = params.Run(opRWread)
 	    fmt.Println()
     }
+  } else if params.twoBuc == true {
+    
+    fmt.Printf("Running %s test...\n", opReadTwo)
+	  readResult = params.Run(opReadTwo)
+	  fmt.Println()
 
   } else {
     fmt.Printf("Running %s test...\n", opRead)
@@ -201,7 +222,8 @@ func (params *Params) Run(op string) Result {
 // Create an individual load request and submit it to the client queue
 func (params *Params) submitLoad(op string) {
 	bucket := aws.String(params.bucketName)
-	for i := 0; i < params.numSamples; i++ {
+	bucket2 := aws.String(params.bucketName2)
+  for i := 0; i < params.numSamples; i++ {
 		key := aws.String(fmt.Sprintf("%s%d", params.objectNamePrefix, i))
 		if op == opWrite {
 			params.requests <- &s3.PutObjectInput{
@@ -251,6 +273,32 @@ func (params *Params) submitLoad(op string) {
 				  Bucket: bucket,
 				  Key:    key,
 				  Body:   bytes.NewReader(bufferBytes),
+        }
+      }
+    } else if op == opWriteTwo {
+      if i%2 ==0 {
+        params.requests <- &s3.PutObjectInput{
+				  Bucket: bucket,
+				  Key:    key,
+				  Body:   bytes.NewReader(bufferBytes),
+        }
+      } else {
+        params.requests <- &s3.PutObjectInput{
+				  Bucket: bucket2,
+				  Key:    key,
+				  Body:   bytes.NewReader(bufferBytes),
+        }
+      }
+     } else if op == opReadTwo {
+      if i%2 ==0 {
+        params.requests <- &s3.GetObjectInput{
+				  Bucket: bucket,
+				  Key:    key,
+        }
+      } else {
+        params.requests <- &s3.GetObjectInput{
+				  Bucket: bucket2,
+				  Key:    key,
         }
       }
 		} else {
@@ -313,6 +361,8 @@ type Params struct {
 	verbose          bool
   rw               bool
   rw_ratio         int
+  twoBuc           bool
+  bucketName2      string
 }
 
 func (params Params) String() string {
@@ -326,6 +376,8 @@ func (params Params) String() string {
 	output += fmt.Sprintf("verbose:       %d\n", params.verbose)
 	output += fmt.Sprintf("rw:       %d\n", params.rw)
 	output += fmt.Sprintf("rw_ratio:       %d\n", params.rw_ratio)
+	output += fmt.Sprintf("twoBuc:       %d\n", params.twoBuc)
+	output += fmt.Sprintf("bucketName2:       %d\n", params.bucketName2)
 	return output
 }
 
